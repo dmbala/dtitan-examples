@@ -21,8 +21,9 @@ def profiled_run(mesh, out_path: str) -> int:
 def main():
     distenv.init_process_group()
     mesh = mesh_mod.build_mesh((distenv.world_size(),), ("dp",))
-    n = profiled_run(mesh, "artifacts/l1_trace.json")
-    rlog.info(f"exported trace with {n} profiled event rows to artifacts/l1_trace.json")
+    out_path = f"artifacts/l1_trace_rank{distenv.rank()}.json"
+    n = profiled_run(mesh, out_path)
+    rlog.info(f"exported trace with {n} profiled event rows to {out_path}")
     distenv.shutdown()
 
 

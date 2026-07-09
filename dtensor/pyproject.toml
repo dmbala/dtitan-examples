@@ -1,0 +1,9 @@
+[project]
+name = "dtensor-workshop"
+version = "0.1.0"
+description = "Standalone DTensor distributed-training workshop"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

@@ -22,7 +22,7 @@ IMAGE=/n/holylfs06/LABS/kempner_shared/Everyone/containers/applications/dtitan/d
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n1)
 export MASTER_ADDR MASTER_PORT=29500
 
-srun singularity exec --nv \
+srun --cpu-bind=none singularity exec --nv \
   --bind "$(pwd)/data:/data" \
   --bind "$(pwd)/checkpoints:/checkpoints" \
   --bind "$(pwd)/artifacts:/artifacts" \

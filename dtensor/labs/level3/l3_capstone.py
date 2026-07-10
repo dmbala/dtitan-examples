@@ -4,7 +4,6 @@ from torch.distributed.checkpoint.state_dict import get_model_state_dict, set_mo
 from torch.distributed.tensor import DTensor
 
 from dtensor_workshop import distenv, mesh as mesh_mod, rlog
-from dtensor_workshop.fp8 import maybe_convert_fp8
 from dtensor_workshop.moe import MoEFeedForward, routing_imbalance
 from dtensor_workshop.parallel3d import apply_fsdp
 
@@ -20,7 +19,14 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
     batches = [x for _ in range(steps)]
 
     torch.manual_seed(seed)
-    model = maybe_convert_fp8(MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device))
+    # FP8 is intentionally NOT applied to this MoE: routing sends a variable,
+    # non-16-aligned number of tokens to each expert, but Hopper FP8 (_scaled_mm)
+    # requires the token dimension divisible by 16, so FP8 on a sparse MoE needs
+    # token padding (an advanced technique beyond this capstone). This capstone's
+    # optimization is communication/compute overlap via reshard_after_forward;
+    # FP8 (dtensor_workshop.fp8.maybe_convert_fp8) applies cleanly to dense,
+    # 16-aligned layers.
+    model = MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device)
     model = apply_fsdp(model, mesh, reshard_after_forward=reshard_after_forward)
     opt = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
@@ -41,7 +47,7 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
 
     torch.manual_seed(seed + 1000)
     restored = apply_fsdp(
-        maybe_convert_fp8(MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device)), mesh,
+        MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device), mesh,
         reshard_after_forward=reshard_after_forward,
     )
     restored_sd = get_model_state_dict(restored)
@@ -60,7 +66,7 @@ def main():
     if distenv.rank() == 0:
         rlog.info(
             "POSTMORTEM (fill in): which rank/collective failed? Flight Recorder finding? "
-            "mesh layout (dp_replicate/dp_shard/tp)? overlap or FP8 speedup? routing imbalance?"
+            "mesh layout (dp_replicate/dp_shard/tp)? overlap (reshard_after_forward) speedup? routing imbalance?"
         )
     distenv.shutdown()
 

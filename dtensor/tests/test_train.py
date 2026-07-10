@@ -37,3 +37,26 @@ def _run_training_worker(rank, world_size):
 
 def test_run_training_returns_losses():
     run_distributed(_run_training_worker, world_size=4)
+
+
+def _dp_tp_training_worker(rank, world_size):
+    import torch
+    from dtensor_workshop.mesh import build_mesh
+    from dtensor_workshop.model import build_block
+    from dtensor_workshop.tp import apply_tp
+    distenv.init_process_group("gloo")
+    mesh = build_mesh((2, 2), ("dp", "tp"), device_type="cpu")
+    model = apply_tp(build_block(dim=32, hidden=64, n_heads=4, seed=2), mesh["tp"])
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    lo = mesh["dp"].get_local_rank() * 2
+    x = torch.randn(4, 8, 32, generator=torch.Generator().manual_seed(0))[lo:lo + 2]
+    losses = run_training(model, [x, x], opt, dp_mesh=mesh["dp"])
+    assert len(losses) == 2
+    assert losses[1] != losses[0]  # params update between steps
+    import math
+    assert all(math.isfinite(v) for v in losses)
+    distenv.shutdown()
+
+
+def test_run_training_with_dp_mesh_and_tp_grads():
+    run_distributed(_dp_tp_training_worker, world_size=4)

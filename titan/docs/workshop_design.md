@@ -210,12 +210,12 @@ Milestone order: **correct → observable**.
 | # | Lab | Command / action | Expected artifact | Success criterion |
 |---|-----|------------------|-------------------|-------------------|
 | 1 | Preflight | `python preflight.py` | pass/fail lines | all checks pass (incl. `torchtitan.train` import) |
-| 2 | Inspect a config + override | `torchtitan.config.manager` on `debug.toml`, apply 2 overrides | resolved-config dump | overridden values appear as expected |
+| 2 | Inspect a config + override | `ConfigManager().parse_args(["--module","llama3","--config","llama3_debugmodel", …])`, apply 2 overrides | resolved-config dump | overridden values appear as expected |
 | 3 | Fake-backend dry-run | `NGPU=4 … --module llama3 --config llama3_debugmodel --comm.mode=fake_backend` | dry-run log | config launches without real GPUs |
 | 4 | 1D FSDP2 run (debug) | `sbatch launch_1node.sbatch --training.steps=20` | training log | loss decreases; run completes |
 | 5 | Metrics + profiler | add `--profiler.enable_profiling` | trace + metrics log | loss/memory/tokens-per-sec/MFU located in the log |
 | 6 | **Failure-driven:** break a config value | set an invalid override, read the failure | captured error + fix | participant states the root cause and fixes it |
-| — | Real-model taste | `--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` + `llama3` 8B, `--training.steps=5` | short 8B log | an 8B step runs under 1D FSDP2 |
+| — | Real-tokenizer taste | debug model with the real Llama-3.1 tokenizer (`--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct`), `--training.steps=5` | short log | the debug model runs under 1D FSDP2 with the real tokenizer (a real 8B run needs `--config llama3_8b` + an offline dataset — out of scope for L1) |
 
 ### Capstone
 

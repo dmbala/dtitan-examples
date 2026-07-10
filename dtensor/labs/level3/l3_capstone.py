@@ -1,13 +1,12 @@
 import torch
 import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+from torch.distributed.checkpoint.state_dict import get_model_state_dict, set_model_state_dict
 from torch.distributed.tensor import DTensor
 
 from dtensor_workshop import distenv, mesh as mesh_mod, rlog
 from dtensor_workshop.fp8 import maybe_convert_fp8
 from dtensor_workshop.moe import MoEFeedForward, routing_imbalance
 from dtensor_workshop.parallel3d import apply_fsdp
-from dtensor_workshop.train import run_training
 
 
 def _full(out):
@@ -23,7 +22,7 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
     torch.manual_seed(seed)
     model = maybe_convert_fp8(MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device))
     model = apply_fsdp(model, mesh, reshard_after_forward=reshard_after_forward)
-    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    opt = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
     losses = []
     for batch in batches:                       # MoE returns (out, counts); custom loop
@@ -33,21 +32,21 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
         opt.step()
         losses.append(routing_imbalance(counts))
 
-    # Save only model state (avoid optimizer state issues with non-gradient parameters)
-    model_sd, _ = get_state_dict(model, opt)
-    dcp.save({"model": model_sd}, checkpoint_id=checkpoint_id)
+    # MoE routing uses a non-differentiable argmax router, so the router never
+    # receives gradients and thus has no optimizer (momentum) state. DCP
+    # optimizer-state save/load then fails with a missing-momentum-buffer key
+    # mismatch, so the capstone checkpoints MODEL state only. (Full
+    # optimizer-state DCP recovery is demonstrated in l3_fsdp.)
+    dcp.save({"model": get_model_state_dict(model)}, checkpoint_id=checkpoint_id)
 
     torch.manual_seed(seed + 1000)
     restored = apply_fsdp(
         MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device), mesh,
         reshard_after_forward=reshard_after_forward,
     )
-    restored_opt = torch.optim.SGD(restored.parameters(), lr=0.1)
-
-    # Load only model state
-    restored_model_sd, restored_optim_sd = get_state_dict(restored, restored_opt)
-    dcp.load({"model": restored_model_sd}, checkpoint_id=checkpoint_id)
-    set_state_dict(restored, restored_opt, model_state_dict=restored_model_sd, optim_state_dict=restored_optim_sd)
+    restored_sd = get_model_state_dict(restored)
+    dcp.load({"model": restored_sd}, checkpoint_id=checkpoint_id)
+    set_model_state_dict(restored, restored_sd)
 
     resume = (_full(model(x)[0]) - _full(restored(x)[0])).abs().max().item()
     return {"resume_maxdiff": resume, "imbalance": losses[-1], "steps": steps}

@@ -8,6 +8,7 @@ def test_1node():
     assert "--account=kempner_dev" in t
     assert "--partition=kempner_h100" in t
     assert "--mem=" in t
+    assert "--output=outputs/" in t
     assert "--standalone --nproc_per_node=4" in t
     assert "-m torchtitan.train" in t
     assert "--module llama3 --config llama3_debugmodel" in t
@@ -16,6 +17,10 @@ def test_1node():
 
 def test_2node():
     t = (SLURM / "launch_2node.sbatch").read_text()
+    assert "--account=kempner_dev" in t
+    assert "--partition=kempner_h100" in t
+    assert "--mem=" in t
+    assert "--output=outputs/" in t
     assert "--nodes=2" in t
     assert "srun --cpu-bind=none" in t
     assert "--nnodes=2 --nproc_per_node=4" in t

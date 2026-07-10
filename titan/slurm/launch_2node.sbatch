@@ -8,11 +8,13 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
 #SBATCH --time=03:00:00
+#SBATCH --output=outputs/%x-%j.out
 
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 if [ -d container ] && [ -d slurm ]; then :
 elif [ -d titan/slurm ]; then cd titan
+else echo "ERROR: run from the titan/ dir or repo root" >&2; exit 1
 fi
 mkdir -p outputs
 IMAGE=/n/holylfs06/LABS/kempner_shared/Everyone/containers/applications/dtitan/dtitan.sif

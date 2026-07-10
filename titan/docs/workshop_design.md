@@ -85,7 +85,7 @@ MODELS=/n/holylfs06/LABS/kempner_shared/Everyone/testbed/models
 
 | Use | Asset | How |
 |-----|-------|-----|
-| Tokenizer (everywhere) | `$MODELS/Llama-3.1-8B-Instruct` | `--model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct` (real Llama-3.1 tokenizer) |
+| Tokenizer (everywhere) | `$MODELS/Llama-3.1-8B-Instruct` | `--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` (real Llama-3.1 tokenizer) |
 | Fast path (all levels) | torchtitan `llama3` **debug config** (tiny, random init) | quick, self-contained runs with the real tokenizer + synthetic data |
 | Trainable real target (L1–L2) | **Llama-3.1-8B** (`llama3` spec) | short FSDP2 / FSDP2+TP runs; optional **HF→DCP conversion** of the 8B safetensors as a training init |
 | Scaling / architecture demos (L3) | **Llama-3.1-70B**, **Llama-3.1-405B**, **DeepSeek-R1** (`deepseek_v3` MoE) | mesh/topology planning and architecture walkthroughs — **not** full training runs (see caveat) |
@@ -115,7 +115,7 @@ the 0.2.2 config dataclasses): `--training.steps`, `--training.local_batch_size`
 `--parallelism.context_parallel_degree`,
 `--parallelism.pipeline_parallel_degree`,
 `--parallelism.expert_parallel_degree`, plus `--checkpoint.*`,
-`--activation_checkpoint.mode`, and `--profiling.*` (exact checkpoint/profiling
+`--activation_checkpoint.mode`, and `--profiler.*` (exact checkpoint/profiling
 field names confirmed on the rebuilt image, where the model modules import).
 
 ### Slurm launchers
@@ -151,7 +151,7 @@ Run before the workshop; one pass/fail line per check:
 3. GPU visibility (`torch.cuda.device_count() == 4`) and a 2-rank NCCL all-reduce.
 4. Tokenizer path readable (`$MODELS/Llama-3.1-8B-Instruct`).
 5. Write access to `outputs/` (logs, checkpoints, snapshots, traces).
-6. A `COMM_MODE=fake_backend` dry-run of a larger intended config **without** real GPUs.
+6. An `NGPU=4 … --comm.mode=fake_backend` dry-run of a larger intended config **without** real GPUs.
 
 ### Output & retention
 
@@ -198,7 +198,7 @@ run.
 Repo tour (`torchtitan/train.py`, model specs under `torchtitan/models/`,
 components for checkpoint/metrics/profiling); config flow (`--job.config_file`,
 dotted CLI overrides, resolving with `torchtitan.config.manager`); launch basics
-(rank/world/local-rank, GPU assignment, `COMM_MODE=fake_backend` dry-run); **1D
+(rank/world/local-rank, GPU assignment, `NGPU=4 … --comm.mode=fake_backend` dry-run); **1D
 FSDP2** baseline; observability (rank-aware logs, loss/memory/throughput/MFU);
 first profiler trace; beginner troubleshooting (bad config names/overrides, GPU
 count mismatch, missing tokenizer, multi-rank stack traces).
@@ -211,11 +211,11 @@ Milestone order: **correct → observable**.
 |---|-----|------------------|-------------------|-------------------|
 | 1 | Preflight | `python preflight.py` | pass/fail lines | all checks pass (incl. `torchtitan.train` import) |
 | 2 | Inspect a config + override | `torchtitan.config.manager` on `debug.toml`, apply 2 overrides | resolved-config dump | overridden values appear as expected |
-| 3 | Fake-backend dry-run | `COMM_MODE=fake_backend … --module llama3 --config llama3_debugmodel` | dry-run log | config launches without real GPUs |
+| 3 | Fake-backend dry-run | `NGPU=4 … --module llama3 --config llama3_debugmodel --comm.mode=fake_backend` | dry-run log | config launches without real GPUs |
 | 4 | 1D FSDP2 run (debug) | `sbatch launch_1node.sbatch --training.steps=20` | training log | loss decreases; run completes |
-| 5 | Metrics + profiler | add `--profiling.enable_profiling` | trace + metrics log | loss/memory/tokens-per-sec/MFU located in the log |
+| 5 | Metrics + profiler | add `--profiler.enable_profiling` | trace + metrics log | loss/memory/tokens-per-sec/MFU located in the log |
 | 6 | **Failure-driven:** break a config value | set an invalid override, read the failure | captured error + fix | participant states the root cause and fixes it |
-| — | Real-model taste | `--model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct` + `llama3` 8B, `--training.steps=5` | short 8B log | an 8B step runs under 1D FSDP2 |
+| — | Real-model taste | `--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` + `llama3` 8B, `--training.steps=5` | short 8B log | an 8B step runs under 1D FSDP2 |
 
 ### Capstone
 

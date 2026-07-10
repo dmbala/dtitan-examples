@@ -6,6 +6,8 @@
 
 **Goals:** Develop a concrete mental model of how TorchTitan starts a job, applies the selected model spec and parallelism, emits logs/metrics, and saves enough to debug a small run.
 
+**Assets:** The built-in `llama3_debugmodel` config needs both a tokenizer and a dataset. The workshop passes `--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` (the real Llama-3.1 tokenizer, used offline) plus a small local dataset — the debug config's default `dataset=c4_test` is not included in the pip wheel, so the exact dataset wiring is confirmed on the rebuilt container. `$MODELS=/n/holylfs06/LABS/kempner_shared/Everyone/testbed/models`.
+
 ---
 
 ## Lab 1: Preflight Checks
@@ -19,14 +21,14 @@ python preflight.py
 
 **Expected artifact:** A pass/fail line for each check printed to stdout.
 
-**Success criterion:** All checks pass, including:
-- `import torchtitan` and `import torchtitan.train` (verifies torch/torchtitan compatibility)
-- Config resolution (`ConfigManager().parse_args()` succeeds)
-- GPU visibility (`torch.cuda.device_count() == 4`)
-- 2-rank NCCL all-reduce communication
+**Success criterion:** All 5 checks pass:
+- `import torchtitan` succeeds
+- `import torchtitan.train` succeeds (verifies torch/torchtitan compatibility)
 - Tokenizer path readable (`$MODELS/Llama-3.1-8B-Instruct`)
-- Write access to `outputs/`
-- Dry-run completion with `COMM_MODE=fake_backend`
+- `outputs/` is writable
+- At least one GPU visible (`torch.cuda.device_count() > 0`)
+
+Config resolution, NCCL collective checks, and the fake-backend dry-run are **not** part of preflight — they're exercised in Labs 2 and 3 below.
 
 ---
 
@@ -34,7 +36,7 @@ python preflight.py
 
 **Goal:** Understand how TorchTitan's config system works and verify that dotted CLI overrides apply correctly.
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Command:**
 ```bash
@@ -56,11 +58,11 @@ python -c "import torchtitan.config as c; print(c.ConfigManager().parse_args(['-
 
 **Goal:** Verify that TorchTitan's config and model initialization work correctly without requiring GPUs.
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Command:**
 ```bash
-COMM_MODE=fake_backend python -m torchtitan.train --module llama3 --config llama3_debugmodel
+NGPU=4 python -m torchtitan.train --module llama3 --config llama3_debugmodel --comm.mode=fake_backend
 ```
 
 **Expected artifact:** Console log showing model loading, rank 0 info, and training loop initialization, ending cleanly without GPU allocation.
@@ -79,11 +81,11 @@ COMM_MODE=fake_backend python -m torchtitan.train --module llama3 --config llama
 
 **Goal:** Execute a small distributed training run on one node with 4 GPUs, using FSDP2 (Fully Sharded Data Parallel) for the first time.
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Command:**
 ```bash
-sbatch slurm/launch_1node.sbatch --training.steps=20 --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct
+sbatch slurm/launch_1node.sbatch --training.steps=20 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct
 ```
 
 (where `$MODELS=/n/holylfs06/LABS/kempner_shared/Everyone/testbed/models`)
@@ -94,9 +96,9 @@ sbatch slurm/launch_1node.sbatch --training.steps=20 --model.tokenizer_path=$MOD
 - All 4 ranks are visible in the logs (look for rank-aware log lines)
 - Loss decreases over the 20 training steps (training is not diverging)
 - No collective communication errors
-- Checkpoint/metrics files appear in `outputs/`
+- Metrics (loss, memory, throughput) appear in the log — the debug config does not enable checkpointing by default, so no checkpoint files are produced unless `--checkpoint.enable_checkpoint` is set
 
-**Tip:** Inspect the rank-0 log with `cat outputs/log-rank-0.txt` or similar to see the full trace. If loss does not decrease, check that the model is initialized correctly and the learning rate is reasonable.
+**Tip:** Inspect the job log with `cat outputs/<jobname>-<jobid>.out` (the launcher's `--output` places it there) to see the full trace. If loss does not decrease, check that the model is initialized correctly and the learning rate is reasonable.
 
 ---
 
@@ -104,11 +106,11 @@ sbatch slurm/launch_1node.sbatch --training.steps=20 --model.tokenizer_path=$MOD
 
 **Goal:** Enable profiling to observe training dynamics: loss, memory usage, throughput (tokens/sec), and model FLOP utilization (MFU).
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Command:**
 ```bash
-sbatch slurm/launch_1node.sbatch --training.steps=20 --profiling.enable_profiling --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct
+sbatch slurm/launch_1node.sbatch --training.steps=20 --profiler.enable_profiling --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct
 ```
 
 **Expected artifact:**
@@ -130,11 +132,11 @@ sbatch slurm/launch_1node.sbatch --training.steps=20 --profiling.enable_profilin
 
 **Goal:** Learn to read TorchTitan errors by intentionally breaking a configuration and diagnosing the root cause.
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Task:** Submit a job with an invalid configuration override. For example:
 ```bash
-sbatch slurm/launch_1node.sbatch --training.steps=20 --parallelism.tensor_parallel_degree=3 --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct
+sbatch slurm/launch_1node.sbatch --training.steps=20 --parallelism.tensor_parallel_degree=3 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct
 ```
 
 (Note: 3 is invalid on 4 GPUs — tensor parallelism degree must divide the number of GPUs evenly.)
@@ -156,7 +158,7 @@ Then, re-run the job with the corrected override and verify it succeeds (as in L
 
 **Goal:** Execute a complete 1D FSDP2 training run and submit a capstone package demonstrating your understanding of configuration, metrics, and diagnostics.
 
-**Runs require the rebuilt torch ≥ 2.11 container (Task 1).**
+**Runs require the rebuilt container (see container/dtitan.def).**
 
 **Task:** Design and run a short 1D FSDP2 training scenario using the TorchTitan debug config or a variant. You have flexibility in the number of steps, batch size, and sequence length, but aim for a run that completes in a reasonable time (a few minutes to ~10 minutes) and collects full diagnostics.
 
@@ -164,8 +166,8 @@ Then, re-run the job with the corrected override and verify it succeeds (as in L
 ```bash
 sbatch slurm/launch_1node.sbatch \
   --training.steps=50 \
-  --profiling.enable_profiling \
-  --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct
+  --profiler.enable_profiling \
+  --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct
 ```
 
 **Capstone deliverables:**
@@ -174,11 +176,11 @@ sbatch slurm/launch_1node.sbatch \
 
 2. **Resolved configuration** — Output of the config-inspection step (Lab 2 pattern) applied to your overrides:
    ```bash
-   python -c "import torchtitan.config as c; print(c.ConfigManager().parse_args(['--module','llama3','--config','llama3_debugmodel','--training.steps','50','--profiling.enable_profiling']).training)"
+   python -c "import torchtitan.config as c; print(c.ConfigManager().parse_args(['--module','llama3','--config','llama3_debugmodel','--training.steps','50','--profiler.enable_profiling']).training)"
    ```
    (Include the full resolved config dict or dataclass output.)
 
-3. **Training log** — Rank-0 log from `outputs/` (e.g., `log-rank-0.txt`), showing at least:
+3. **Training log** — Job log from `outputs/` (e.g., `outputs/<jobname>-<jobid>.out`), showing at least:
    - Model name and parameter count
    - Per-step loss and memory metrics
    - Final step and completion message
@@ -196,7 +198,7 @@ sbatch slurm/launch_1node.sbatch \
 
 ## Reference Artifacts
 
-Known-good reference outputs (logs, profiler traces, resolved configs, memory snapshots, and seed checkpoints) are provided under `outputs/reference/` for comparison if your environment differs slightly.
+**Planned:** known-good reference outputs (logs, profiler traces, resolved configs, memory snapshots, and seed checkpoints) will be provided under `outputs/reference/` for comparison if your environment differs slightly. These do not exist yet; adding them will require an `!outputs/reference/` entry in `.gitignore` (currently `outputs/*` is ignored wholesale).
 
 ---
 
@@ -204,7 +206,7 @@ Known-good reference outputs (logs, profiler traces, resolved configs, memory sn
 
 | Error | Likely cause | Fix |
 |-------|--------------|-----|
-| `ImportError: Cannot import torchtitan` | Torch/TorchTitan mismatch (torch 2.10 instead of ≥ 2.11) | Ensure the rebuilt container (Task 1) is used |
+| `ImportError: Cannot import torchtitan` | Torch/TorchTitan mismatch (torch 2.10 instead of ≥ 2.11) | Ensure the rebuilt container (see container/dtitan.def) is used |
 | `torch.cuda.device_count() != 4` | Not running in the container or on the right node | Check `nvidia-smi` and Singularity bind mounts in the launch script |
 | `ConfigManager` cannot parse `llama3_debugmodel` | Missing or wrong config name | Use `--module llama3 --config llama3_debugmodel` exactly as written |
 | `tensor_parallel_degree=3` fails on 4 GPUs | Parallelism degree does not divide GPU count | Ensure all parallelism degrees divide the number of GPUs (4 in this case) |

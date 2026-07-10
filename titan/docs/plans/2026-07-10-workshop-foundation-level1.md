@@ -20,8 +20,8 @@ Task 1 (the rebuild recipe) is the prerequisite for every **[rebuilt]** task. Bu
 ## Global Constraints
 
 - **Container:** rebuild `dtitan.sif` on an **NGC base with torch ≥ 2.11 stable** + **torchtitan==0.2.2** + torchao + flash-attn. `IMAGE=/n/holylfs06/LABS/kempner_shared/Everyone/containers/applications/dtitan/dtitan.sif`. Invoke with `singularity exec "$IMAGE" …`; add `--nv` for GPU.
-- **Config interface (verified in-container):** `torchrun … -m torchtitan.train --module <model> --config <registered-config>` + **dotted CLI overrides**. Level 1 uses the built-in **`--module llama3 --config llama3_debugmodel`** + overrides — **no custom config registration** (keeps Level 1 free of the unverified registry API). Verified override paths: `--training.steps`, `--training.local_batch_size`, `--training.seq_len`, `--parallelism.data_parallel_shard_degree`, `--parallelism.tensor_parallel_degree`, `--profiling.enable_profiling`.
-- **Assets (offline):** `MODELS=/n/holylfs06/LABS/kempner_shared/Everyone/testbed/models`. Tokenizer: `--model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct`. Trainable real target: `$MODELS/Llama-3.1-8B` (`llama3` spec). `HF_HUB_OFFLINE=1` (container-set — do not change). The testbed holds weights+tokenizers, not datasets → use TorchTitan's offline/synthetic datasets.
+- **Config interface (verified in-container):** `torchrun … -m torchtitan.train --module <model> --config <registered-config>` + **dotted CLI overrides**. Level 1 uses the built-in **`--module llama3 --config llama3_debugmodel`** + overrides — **no custom config registration** (keeps Level 1 free of the unverified registry API). Verified override paths: `--training.steps`, `--training.local_batch_size`, `--training.seq_len`, `--parallelism.data_parallel_shard_degree`, `--parallelism.tensor_parallel_degree`, `--profiler.enable_profiling`.
+- **Assets (offline):** `MODELS=/n/holylfs06/LABS/kempner_shared/Everyone/testbed/models`. Tokenizer: `--hf_assets_path=$MODELS/Llama-3.1-8B-Instruct`. Trainable real target: `$MODELS/Llama-3.1-8B` (`llama3` spec). `HF_HUB_OFFLINE=1` (container-set — do not change). The testbed holds weights+tokenizers, not datasets → use TorchTitan's offline/synthetic datasets.
 - **Cluster:** `--account=kempner_dev`, `--partition=kempner_h100` (H100 80 GB, 4/node); 8-GPU/user cap. Reuse the **GPU-validated** dtensor launcher settings: `--mem=128G`, and (2-node) `srun --cpu-bind=none`.
 - **Working directory** for all commands is `titan/`. Statically-testable pieces run with pytest inside the container: `singularity exec "$IMAGE" bash -lc 'cd titan && python -m pytest tests -q'`.
 - **Flight Recorder** (Level 3, later): use `TORCH_FR_BUFFER_SIZE` (the container's `TORCH_NCCL_TRACE_BUFFER_SIZE` is deprecated on torch ≥ 2.11).
@@ -523,9 +523,9 @@ git commit -m "Add TorchTitan preflight check (detects the torch/torchtitan gate
 
 1. **Preflight** — `python preflight.py` (all checks pass on the rebuilt container).
 2. **Inspect + override a config** — `python -c "import torchtitan.config as c; print(c.ConfigManager().parse_args(['--module','llama3','--config','llama3_debugmodel','--training.steps','7']).training.steps)"` → prints `7`.
-3. **Fake-backend dry-run** — `COMM_MODE=fake_backend python -m torchtitan.train --module llama3 --config llama3_debugmodel` → resolves + dry-runs without GPUs.
-4. **1D FSDP2 run** — `sbatch slurm/launch_1node.sbatch --training.steps=20 --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct` → loss decreases in `outputs/`.
-5. **Metrics + profiler** — add `--profiling.enable_profiling` → trace artifact; locate loss/memory/tokens-per-sec/MFU in the log.
+3. **Fake-backend dry-run** — `NGPU=4 python -m torchtitan.train --module llama3 --config llama3_debugmodel --comm.mode=fake_backend` → resolves + dry-runs without GPUs.
+4. **1D FSDP2 run** — `sbatch slurm/launch_1node.sbatch --training.steps=20 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` → loss decreases in `outputs/`.
+5. **Metrics + profiler** — add `--profiler.enable_profiling` → trace artifact; locate loss/memory/tokens-per-sec/MFU in the log.
 6. **Failure-driven** — pass an invalid override (e.g. `--parallelism.tensor_parallel_degree=3` on 4 GPUs) → read the failure, state the root cause, fix it.
 - **Capstone** — a short 1D FSDP2 run submitting: launch command, resolved config, training log, a profiler artifact, and a plausibility note on loss/throughput.
 
@@ -560,8 +560,8 @@ git commit -m "Add Level 1 lab guide (config, fake-backend, FSDP2, metrics, debu
 
 1. **Preflight all-pass** — `singularity exec --nv "$IMAGE" bash -lc 'cd titan && python preflight.py'` → every check PASS (esp. `torchtitan.train import`).
 2. **Debug FSDP2 run** — `sbatch slurm/launch_1node.sbatch --training.steps=20` → job COMPLETED; loss trends down in `outputs/`.
-3. **Metrics + profiler** — `sbatch slurm/launch_1node.sbatch --training.steps=20 --profiling.enable_profiling` → profiler artifact present; loss/memory/tokens-per-sec/MFU in the log.
-4. **Real tokenizer + Llama-3.1-8B taste** — `sbatch slurm/launch_1node.sbatch --training.steps=5 --model.tokenizer_path=$MODELS/Llama-3.1-8B-Instruct` → an 8B step runs under 1D FSDP2 (short).
+3. **Metrics + profiler** — `sbatch slurm/launch_1node.sbatch --training.steps=20 --profiler.enable_profiling` → profiler artifact present; loss/memory/tokens-per-sec/MFU in the log.
+4. **Real tokenizer + Llama-3.1-8B taste** — `sbatch slurm/launch_1node.sbatch --training.steps=5 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` → an 8B step runs under 1D FSDP2 (short).
 5. **Failure lab** — an invalid override fails with a readable error whose root cause is documented.
 
 Note the **8-GPU/user cap** and that jobs use `--account=kempner_dev`.
@@ -595,4 +595,4 @@ Deferred to later plans (out of scope here, by design): Level 2 (2D FSDP2+TP, DC
 
 **2. Placeholder scan:** No `TBD`/`TODO`/"handle edge cases"/"similar to Task N". The NGC base tag (`26.01-py3`) is a concrete starting value the builder confirms ships torch ≥ 2.11 (the `%post` import guard fails the build otherwise) — a build-time check, not a placeholder. `<workshop-registered-config>` appears only in the spec's Level 3 example, not this plan.
 
-**3. Type consistency:** Preflight function names are stable (`check_torchtitan_import`, `check_torchtitan_train`, `check_tokenizer`, `check_dir_writable`, `check_gpu_visible`, `run_checks`, `main`, each returning a `(name, ok, detail)` tuple). Launchers, tests, and guides all use the verified `-m torchtitan.train --module llama3 --config llama3_debugmodel` interface and the verified override paths (`--training.steps`, `--parallelism.*`, `--profiling.enable_profiling`), consistent across tasks. Every `[rebuilt]` task states its runtime dependency on Task 1.
+**3. Type consistency:** Preflight function names are stable (`check_torchtitan_import`, `check_torchtitan_train`, `check_tokenizer`, `check_dir_writable`, `check_gpu_visible`, `run_checks`, `main`, each returning a `(name, ok, detail)` tuple). Launchers, tests, and guides all use the verified `-m torchtitan.train --module llama3 --config llama3_debugmodel` interface and the verified override paths (`--training.steps`, `--parallelism.*`, `--profiler.enable_profiling`), consistent across tasks. Every `[rebuilt]` task states its runtime dependency on Task 1.

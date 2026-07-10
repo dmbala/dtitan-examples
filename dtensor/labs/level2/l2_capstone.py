@@ -33,7 +33,8 @@ def run_capstone(mesh, checkpoint_id, trace_path, steps=4, dim=32, hidden=64, n_
     if torch.cuda.is_available():
         activities.append(ProfilerActivity.CUDA)
     with profile(activities=activities) as prof:
-        parallel = run_training(model, par_batches, opt, dp_mesh=dp)
+        # activation checkpointing = the capstone's memory optimization
+        parallel = run_training(model, par_batches, opt, dp_mesh=dp, use_ac=True)
     prof.export_chrome_trace(trace_path)
 
     dcp_save(model, opt, checkpoint_id)

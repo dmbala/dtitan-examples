@@ -2,6 +2,8 @@ import torch
 import torch.distributed as dist
 from torch.distributed.tensor import DTensor
 
+from dtensor_workshop.acheckpoint import forward_maybe_checkpointed
+
 
 def average_gradients(model, dp_mesh) -> None:
     group = dp_mesh.get_group()
@@ -14,11 +16,11 @@ def average_gradients(model, dp_mesh) -> None:
         local /= size
 
 
-def run_training(model, batches, optimizer, dp_mesh=None):
+def run_training(model, batches, optimizer, dp_mesh=None, use_ac=False):
     losses = []
     for batch in batches:
         optimizer.zero_grad()
-        loss = model(batch).pow(2).mean()
+        loss = forward_maybe_checkpointed(model, batch, use_ac).pow(2).mean()
         loss.backward()
         if dp_mesh is not None:
             average_gradients(model, dp_mesh)

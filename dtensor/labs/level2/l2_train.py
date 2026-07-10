@@ -11,12 +11,13 @@ def _global_batch(dim, generator):
 
 
 def parallel_and_baseline_losses(mesh, steps=4, dim=32, hidden=64, n_heads=4, seed=5):
+    device = mesh.device_type
     gen = torch.Generator().manual_seed(2024)
-    global_batch = _global_batch(dim, gen)
+    global_batch = _global_batch(dim, gen).to(device)
     batches = [global_batch for _ in range(steps)]
 
     # single-device baseline on the full batch
-    base_model = build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed)
+    base_model = build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed).to(device)
     base_opt = torch.optim.SGD(base_model.parameters(), lr=0.1)
     baseline = run_training(base_model, batches, base_opt, dp_mesh=None)
 
@@ -25,7 +26,7 @@ def parallel_and_baseline_losses(mesh, steps=4, dim=32, hidden=64, n_heads=4, se
     lo = dp.get_local_rank() * 2
     par_batches = [b[lo:lo + 2] for b in batches]
     par_model = apply_tp(
-        build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed), mesh["tp"]
+        build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed).to(device), mesh["tp"]
     )
     par_opt = torch.optim.SGD(par_model.parameters(), lr=0.1)
     parallel = run_training(par_model, par_batches, par_opt, dp_mesh=dp)

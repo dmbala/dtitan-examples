@@ -24,7 +24,7 @@ def run_training(model, batches, optimizer, dp_mesh=None, use_ac=False):
         loss.backward()
         if dp_mesh is not None:
             average_gradients(model, dp_mesh)
-            lt = torch.tensor([loss.item()])
+            lt = loss.detach().reshape(1).clone()
             dist.all_reduce(lt, op=dist.ReduceOp.SUM, group=dp_mesh.get_group())
             losses.append((lt / dp_mesh.size()).item())
         else:

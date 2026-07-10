@@ -1,6 +1,3 @@
-import os
-import tempfile
-
 import torch
 
 from dtensor_workshop import distenv
@@ -18,13 +15,13 @@ def _roundtrip_worker(rank, world_size, ckpt_dir):
     x = torch.randn(2, 8, 32, generator=torch.Generator().manual_seed(0))
 
     m1 = apply_tp(build_block(dim=32, hidden=64, n_heads=4, seed=1), mesh["tp"])
-    opt1 = torch.optim.SGD(m1.parameters(), lr=0.1)
+    opt1 = torch.optim.SGD(m1.parameters(), lr=0.1, momentum=0.9)
     m1(x).pow(2).mean().backward()
     opt1.step()
     dcp_save(m1, opt1, ckpt_dir)
 
     m2 = apply_tp(build_block(dim=32, hidden=64, n_heads=4, seed=999), mesh["tp"])  # different init
-    opt2 = torch.optim.SGD(m2.parameters(), lr=0.1)
+    opt2 = torch.optim.SGD(m2.parameters(), lr=0.1, momentum=0.9)
     dcp_load(m2, opt2, ckpt_dir)
 
     o1, o2 = m1(x), m2(x)

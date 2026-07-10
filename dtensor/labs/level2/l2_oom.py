@@ -44,11 +44,13 @@ def main(argv=None):
     start_memory_record()
     block = build_block(cfg["dim"], cfg["hidden"], cfg["n_heads"]).to(device)
     x = torch.randn(cfg["batch"], cfg["seq"], cfg["dim"], device=device, requires_grad=True)
-    forward_maybe_checkpointed(block, x, use_ac=use_ac).pow(2).mean().backward()
-    torch.cuda.synchronize()
-    peak = torch.cuda.max_memory_allocated() / 1e9
-    dump_memory_snapshot(f"artifacts/l2_mem_rank{distenv.rank()}.pickle")
-    rlog.info(f"size={size} ac={use_ac} peak_gb={peak:.2f}")
+    try:
+        forward_maybe_checkpointed(block, x, use_ac=use_ac).pow(2).mean().backward()
+        torch.cuda.synchronize()
+    finally:
+        peak = torch.cuda.max_memory_allocated() / 1e9
+        dump_memory_snapshot(f"artifacts/l2_mem_rank{distenv.rank()}.pickle")
+        rlog.info(f"size={size} ac={use_ac} peak_gb={peak:.2f}")
     distenv.shutdown()
 
 

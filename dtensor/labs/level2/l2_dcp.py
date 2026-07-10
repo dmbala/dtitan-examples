@@ -13,16 +13,17 @@ def _full(out):
 
 
 def save_restore_resume_maxdiff(mesh, checkpoint_id, steps=2, dim=32, hidden=64, n_heads=4, seed=6):
-    x = torch.randn(2, 8, dim, generator=torch.Generator().manual_seed(0))
+    device = mesh.device_type
+    x = torch.randn(2, 8, dim, generator=torch.Generator().manual_seed(0)).to(device)
     batches = [x for _ in range(steps)]
 
-    orig = apply_tp(build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed), mesh["tp"])
-    orig_opt = torch.optim.SGD(orig.parameters(), lr=0.1)
+    orig = apply_tp(build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed).to(device), mesh["tp"])
+    orig_opt = torch.optim.SGD(orig.parameters(), lr=0.1, momentum=0.9)
     run_training(orig, batches, orig_opt, dp_mesh=mesh["dp"])
     dcp_save(orig, orig_opt, checkpoint_id)
 
-    restored = apply_tp(build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=123), mesh["tp"])
-    restored_opt = torch.optim.SGD(restored.parameters(), lr=0.1)
+    restored = apply_tp(build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed + 1000).to(device), mesh["tp"])
+    restored_opt = torch.optim.SGD(restored.parameters(), lr=0.1, momentum=0.9)
     dcp_load(restored, restored_opt, checkpoint_id)
 
     # one more identical step on both; outputs should stay identical

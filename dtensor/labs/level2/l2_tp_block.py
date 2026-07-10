@@ -7,10 +7,11 @@ from dtensor_workshop.tp import apply_tp
 
 
 def tp_parity_maxdiff(mesh, dim=32, hidden=64, n_heads=4, seed=1) -> float:
-    x = torch.randn(2, 8, dim, generator=torch.Generator().manual_seed(0))
-    ref = build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed)(x).detach()
+    device = mesh.device_type
+    x = torch.randn(2, 8, dim, generator=torch.Generator().manual_seed(0)).to(device)
+    ref = build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed).to(device)(x).detach()
     tp_block = apply_tp(
-        build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed), mesh["tp"]
+        build_block(dim=dim, hidden=hidden, n_heads=n_heads, seed=seed).to(device), mesh["tp"]
     )
     out = tp_block(x)
     out = out.full_tensor() if isinstance(out, DTensor) else out

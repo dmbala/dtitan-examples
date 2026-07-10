@@ -53,9 +53,12 @@ ImportError: cannot import name '_context_parallel_shard' from
 ```
 
 torchtitan 0.2.2 imports `_context_parallel_shard`, a **torch 2.11** symbol
-absent from the 2.10 preview. **Prerequisite:** rebuild the image on an **NGC
-base with torch ≥ 2.11 stable** (a later monthly NGC tag), keeping
-**torchtitan 0.2.2**, plus torchao and flash-attn:
+absent from the 2.10 preview. It is not the only gap — importing any model
+(`torchtitan.models.llama3`) also fails on `activate_flash_attention_impl`
+(another torch-2.11 symbol), so on torch 2.10 **only the bare `torchtitan.config`
+machinery imports**; models and training do not. **Prerequisite:** rebuild the
+image on an **NGC base with torch ≥ 2.11 stable** (a later monthly NGC tag),
+keeping **torchtitan 0.2.2**, plus torchao and flash-attn:
 
 ```
 IMAGE=/n/holylfs06/LABS/kempner_shared/Everyone/containers/applications/dtitan/dtitan.sif   # rebuilt: torch>=2.11
@@ -96,25 +99,24 @@ synthetic / HF-offline datasets.
 
 ### Config strategy
 
-The installed torchtitan wheel ships **no** `train_configs/*.toml`, so the
-workshop **provides its own** under `titan/configs/`:
-
-- `debug.toml` — tiny `llama3`, the fast path.
-- `l1_fsdp.toml`, `l2_fsdp_tp.toml`, `l3_hsdp_tp.toml`, `l3_moe.toml` — per-level baselines.
-
-Runs select a config with `--job.config_file` and layer **dotted CLI overrides**
-on top. Every lab begins by printing the resolved config
-(`python -m torchtitan.config.manager …`) before launching. Representative
-override paths (exact names confirmed against `torchtitan.train --help` on the
-rebuilt image): `--training.steps`, `--training.local_batch_size`,
+TorchTitan 0.2.2 selects configs from a **Python config registry**, not TOML
+files: `--module <model> --config <registered-config>` (verified via
+`torchtitan.config.ConfigManager().parse_args([...])`, whose error message is
+`--module is required. Example: --module llama3 --config llama3_debugmodel`). The
+workshop's fast path is the built-in **`--module llama3 --config
+llama3_debugmodel`**; workshop-specific variants are added by **registering
+entries in the model's `config_registry`** (a small `titan/configs/` Python
+module), not by shipping TOMLs. Every lab layers **dotted CLI overrides** on top
+and prints the resolved config before launching. Verified override paths (from
+the 0.2.2 config dataclasses): `--training.steps`, `--training.local_batch_size`,
 `--training.seq_len`, `--parallelism.data_parallel_shard_degree`,
 `--parallelism.data_parallel_replicate_degree`,
 `--parallelism.tensor_parallel_degree`,
 `--parallelism.context_parallel_degree`,
 `--parallelism.pipeline_parallel_degree`,
-`--parallelism.expert_parallel_degree`, `--checkpoint.enable_checkpoint`,
-`--checkpoint.interval`, `--activation_checkpoint.mode`,
-`--profiling.enable_profiling`, `--profiling.enable_memory_snapshot`.
+`--parallelism.expert_parallel_degree`, plus `--checkpoint.*`,
+`--activation_checkpoint.mode`, and `--profiling.*` (exact checkpoint/profiling
+field names confirmed on the rebuilt image, where the model modules import).
 
 ### Slurm launchers
 
@@ -127,14 +129,14 @@ scaffold that was GPU-tested on `kempner_h100`: `--account=kempner_dev`,
 # 1 node / 4 GPUs (Levels 1 & 2)
 singularity exec --nv --bind $(pwd)/outputs:/outputs "$IMAGE" \
   torchrun --standalone --nproc_per_node=4 -m torchtitan.train \
-    --job.config_file=configs/l1_fsdp.toml "$@"
+    --module llama3 --config llama3_debugmodel "$@"
 
 # 2 nodes / 8 GPUs (Level 3) — c10d rendezvous, srun --cpu-bind=none
 srun --cpu-bind=none singularity exec --nv --bind $(pwd)/outputs:/outputs "$IMAGE" \
   torchrun --nnodes=2 --nproc_per_node=4 \
     --rdzv_backend=c10d --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
     --rdzv_id="$SLURM_JOB_ID" -m torchtitan.train \
-    --job.config_file=configs/l3_hsdp_tp.toml "$@"
+    --module llama3 --config <workshop-registered-config> "$@"
 ```
 
 **Cluster note:** the per-user GPU cap on `kempner_h100` is **8 GPUs**, so
@@ -145,7 +147,7 @@ srun --cpu-bind=none singularity exec --nv --bind $(pwd)/outputs:/outputs "$IMAG
 Run before the workshop; one pass/fail line per check:
 
 1. `import torchtitan` **and** `import torchtitan.train` (catches the torch/torchtitan mismatch above).
-2. Config resolves (`torchtitan.config.manager` on `debug.toml`).
+2. Config resolves (`ConfigManager().parse_args(["--module","llama3","--config","llama3_debugmodel"])`).
 3. GPU visibility (`torch.cuda.device_count() == 4`) and a 2-rank NCCL all-reduce.
 4. Tokenizer path readable (`$MODELS/Llama-3.1-8B-Instruct`).
 5. Write access to `outputs/` (logs, checkpoints, snapshots, traces).
@@ -183,7 +185,7 @@ The plan's "Open Decisions", settled:
 **Title:** TorchTitan Foundations: Configs, FSDP2, Metrics, and First Debugging
 
 **Environment / launch:** 1 node, 4 GPUs, `kempner_h100`; 1-node launcher with
-`--job.config_file=configs/l1_fsdp.toml`.
+the built-in `--module llama3 --config llama3_debugmodel`.
 
 ### Goals
 
@@ -209,7 +211,7 @@ Milestone order: **correct → observable**.
 |---|-----|------------------|-------------------|-------------------|
 | 1 | Preflight | `python preflight.py` | pass/fail lines | all checks pass (incl. `torchtitan.train` import) |
 | 2 | Inspect a config + override | `torchtitan.config.manager` on `debug.toml`, apply 2 overrides | resolved-config dump | overridden values appear as expected |
-| 3 | Fake-backend dry-run | `COMM_MODE=fake_backend … --job.config_file=configs/l1_fsdp.toml` | dry-run log | config launches without real GPUs |
+| 3 | Fake-backend dry-run | `COMM_MODE=fake_backend … --module llama3 --config llama3_debugmodel` | dry-run log | config launches without real GPUs |
 | 4 | 1D FSDP2 run (debug) | `sbatch launch_1node.sbatch --training.steps=20` | training log | loss decreases; run completes |
 | 5 | Metrics + profiler | add `--profiling.enable_profiling` | trace + metrics log | loss/memory/tokens-per-sec/MFU located in the log |
 | 6 | **Failure-driven:** break a config value | set an invalid override, read the failure | captured error + fix | participant states the root cause and fixes it |
@@ -232,8 +234,8 @@ typo. Always resolve-and-print the config before an expensive launch.
 
 **Title:** FSDP2 + Tensor Parallelism: Checkpointing, Memory, and Bottleneck Profiling
 
-**Environment / launch:** 1 node, 4 GPUs. 1-node launcher,
-`--job.config_file=configs/l2_fsdp_tp.toml`.
+**Environment / launch:** 1 node, 4 GPUs. 1-node launcher, `--module llama3`
+with the Level 2 registered config (or `llama3_debugmodel` + parallelism overrides).
 
 ### Goals
 
@@ -287,7 +289,7 @@ module (now available on torch ≥ 2.11).
 **Title:** Multi-Node TorchTitan: Pipeline, Context, Expert Parallelism, Precision, and NCCL Debugging
 
 **Environment / launch:** 2 nodes, 8 GPUs, `kempner_h100`. 2-node launcher
-(`srun --cpu-bind=none`, c10d rendezvous), `--job.config_file=configs/l3_hsdp_tp.toml`.
+(`srun --cpu-bind=none`, c10d rendezvous), `--module llama3` with the Level 3 registered config.
 `NCCL_DEBUG=INFO`; `TORCH_FR_BUFFER_SIZE=20971520`; `CUDA_DEVICE_MAX_CONNECTIONS=1`
 for async TP.
 
@@ -384,8 +386,9 @@ the debugging lab. Only one 8-GPU job runs at a time (per-user cap).
   container, cluster, and the offline model testbed.
 - **Assets grounded** in `…/testbed/models/`: real Llama-3.1 tokenizer +
   trainable Llama-3.1-8B; larger Llamas / DeepSeek for planning.
-- **Config interface grounded** to torchtitan 0.2.2 (`--job.config_file` + dotted
-  overrides; workshop ships its own TOMLs since none are in the wheel).
+- **Config interface grounded** to torchtitan 0.2.2 (`--module <model> --config
+  <registered-config>` from the Python config registry + dotted CLI overrides;
+  workshop registers its own config variants rather than shipping TOMLs).
 - **Launchers reuse** the DTensor workshop's GPU-validated Slurm scaffold
   (`--account=kempner_dev`, `--mem`, `srun --cpu-bind=none`, 8-GPU cap).
 - **Level 3 scoped honestly** to 8 GPUs: FP8 core; pipeline/expert/context

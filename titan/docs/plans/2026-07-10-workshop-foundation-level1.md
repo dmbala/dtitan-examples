@@ -561,7 +561,7 @@ git commit -m "Add Level 1 lab guide (config, fake-backend, FSDP2, metrics, debu
 1. **Preflight all-pass** — `singularity exec --nv "$IMAGE" bash -lc 'cd titan && python preflight.py'` → every check PASS (esp. `torchtitan.train import`).
 2. **Debug FSDP2 run** — `sbatch slurm/launch_1node.sbatch --training.steps=20` → job COMPLETED; loss trends down in `outputs/`.
 3. **Metrics + profiler** — `sbatch slurm/launch_1node.sbatch --training.steps=20 --profiler.enable_profiling` → profiler artifact present; loss/memory/tokens-per-sec/MFU in the log.
-4. **Real tokenizer + Llama-3.1-8B taste** — `sbatch slurm/launch_1node.sbatch --training.steps=5 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` → an 8B step runs under 1D FSDP2 (short).
+4. **Real-tokenizer taste (debug model)** — `sbatch slurm/launch_1node.sbatch --training.steps=5 --hf_assets_path=$MODELS/Llama-3.1-8B-Instruct` → the debug model runs under 1D FSDP2 with the real Llama-3.1 tokenizer (the launcher hardcodes `--config llama3_debugmodel`; a real 8B run needs `--config llama3_8b` + an offline dataset, out of scope for L1).
 5. **Failure lab** — an invalid override fails with a readable error whose root cause is documented.
 
 Note the **8-GPU/user cap** and that jobs use `--account=kempner_dev`.

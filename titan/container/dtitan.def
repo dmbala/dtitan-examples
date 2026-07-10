@@ -1,8 +1,12 @@
 Bootstrap: docker
-# Base MUST provide torch >= 2.11 stable. NGC 25.11 ships torch 2.10.0a0, on which
-# torchtitan 0.2.2 fails to import (_context_parallel_shard / activate_flash_attention_impl
-# are torch-2.11 symbols). Use a later NGC monthly tag whose torch is >= 2.11.
-From: nvcr.io/nvidia/pytorch:26.01-py3
+# Base MUST provide torch >= 2.11. torchtitan 0.2.2 imports torch-2.11 symbols
+# (_context_parallel_shard / activate_flash_attention_impl) absent from torch 2.10.
+# NGC framework containers ship prerelease torch; verified tag -> torch mapping:
+#   25.11 -> 2.10.0a0 (the image this replaces)   25.12 -> 2.10.0a0   26.01 -> 2.10.0a0
+#   26.02 -> 2.11.0a0 (first >= 2.11)   26.03 -> 2.11.0a0 (latest 2.11 line)   26.04+ -> 2.12/2.13
+# 26.03 is chosen: the newest 2.11-line base (best symbol coverage) without jumping to
+# torch 2.12/2.13, whose API drift risks breaking torchtitan 0.2.2.
+From: nvcr.io/nvidia/pytorch:26.03-py3
 
 %labels
     Maintainer bala_desinghu@harvard.edu
@@ -21,8 +25,9 @@ From: nvcr.io/nvidia/pytorch:26.01-py3
     pip install torchao
     pip install torchtitan==0.2.2
     pip install datasets tokenizers sentencepiece tomli-w pynvml huggingface_hub
-    # Fail the build if the workshop entrypoint or a model can't import.
-    python -c "import torchtitan.train; import torchtitan.models.llama3; print('torchtitan import OK')"
+    # Fail the build loudly if pip clobbered the NGC CUDA torch, or if the workshop
+    # entrypoint / a model can't import (the torch-2.10 symbol gap that broke the old image).
+    python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda); assert torch.__version__.startswith('2.11'), 'torch is not 2.11 (pip may have replaced the NGC build): '+torch.__version__; assert torch.version.cuda is not None, 'torch has no CUDA (a CPU-only wheel replaced the NGC build)'; import torchtitan.train; import torchtitan.models.llama3; print('torchtitan import OK')"
     mkdir -p /data/hf_cache && chmod 777 /data/hf_cache
 
 %help
@@ -31,13 +36,13 @@ From: nvcr.io/nvidia/pytorch:26.01-py3
     Build command:
         apptainer build dtitan.sif dtitan.def
 
-    The %post import check will FAIL the build if the base torch version is < 2.11.
-    This is a guardrail against the version drift that broke the current image:
-    NGC 25.11 ships torch 2.10.0a0, which cannot import torchtitan 0.2.2 symbols
-    (_context_parallel_shard and activate_flash_attention_impl).
+    The %post import check will FAIL the build if the base torch version is < 2.11
+    or if pip replaced the NGC CUDA torch. This guards the version drift that broke
+    the old image: NGC 25.11 ships torch 2.10.0a0, which cannot import torchtitan
+    0.2.2 symbols (_context_parallel_shard and activate_flash_attention_impl).
 
-    Confirm that the chosen NGC tag (nvcr.io/nvidia/pytorch:26.01-py3) actually ships
-    torch >= 2.11 before building.
+    Chosen base nvcr.io/nvidia/pytorch:26.03-py3 ships torch 2.11.0a0 (verified against
+    the NGC release notes); 26.01 and earlier still ship torch 2.10.
 
 %runscript
     exec "$@"

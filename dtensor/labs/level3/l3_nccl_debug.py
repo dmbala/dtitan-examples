@@ -12,7 +12,7 @@ def main():
     distenv.init_process_group()
     mesh = mesh_mod.build_mesh((distenv.world_size(),), ("dp",))
     # intentional per-rank shape disagreement (the collective-mismatch failure mode)
-    agree = diagnose_batch(torch.zeros(distenv.rank() + 1), mesh)
+    agree = diagnose_batch(torch.zeros(distenv.rank() + 1).to(mesh.device_type), mesh)
     rlog.info(f"batch shapes agree across ranks = {agree}")
     dumped = dump_flight_recorder(f"artifacts/l3_flight_recorder_rank{distenv.rank()}.dump")
     rlog.info(f"flight recorder dumped = {dumped}")

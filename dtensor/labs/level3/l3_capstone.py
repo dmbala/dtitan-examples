@@ -24,13 +24,13 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
     model = apply_fsdp(model, mesh, reshard_after_forward=reshard_after_forward)
     opt = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
-    losses = []
+    imbalances = []
     for batch in batches:                       # MoE returns (out, counts); custom loop
         opt.zero_grad()
         out, counts = model(batch)
         out.pow(2).mean().backward()
         opt.step()
-        losses.append(routing_imbalance(counts))
+        imbalances.append(routing_imbalance(counts))
 
     # MoE routing uses a non-differentiable argmax router, so the router never
     # receives gradients and thus has no optimizer (momentum) state. DCP
@@ -41,7 +41,7 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
 
     torch.manual_seed(seed + 1000)
     restored = apply_fsdp(
-        MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device), mesh,
+        maybe_convert_fp8(MoEFeedForward(dim=dim, hidden=hidden, n_experts=n_experts).to(device)), mesh,
         reshard_after_forward=reshard_after_forward,
     )
     restored_sd = get_model_state_dict(restored)
@@ -49,12 +49,12 @@ def run_capstone(mesh, checkpoint_id, steps=3, dim=32, hidden=64, n_experts=4,
     set_model_state_dict(restored, restored_sd)
 
     resume = (_full(model(x)[0]) - _full(restored(x)[0])).abs().max().item()
-    return {"resume_maxdiff": resume, "imbalance": losses[-1], "steps": steps}
+    return {"resume_maxdiff": resume, "imbalance": imbalances[-1], "steps": steps}
 
 
 def main():
     distenv.init_process_group()
-    mesh = mesh_mod.build_mesh((2, 2), ("dp_replicate", "dp_shard"))
+    mesh = mesh_mod.build_mesh((2, distenv.world_size() // 2), ("dp_replicate", "dp_shard"))
     res = run_capstone(mesh, "checkpoints/l3_capstone")
     rlog.info(f"resume_maxdiff={res['resume_maxdiff']:.2e} imbalance={res['imbalance']:.3f}")
     if distenv.rank() == 0:

@@ -35,7 +35,7 @@ def fsdp_resume_maxdiff(mesh, checkpoint_id, steps=2, reshard_after_forward=True
 
 def main():
     distenv.init_process_group()
-    mesh = mesh_mod.build_mesh((2, 2), ("dp_replicate", "dp_shard"))
+    mesh = mesh_mod.build_mesh((2, distenv.world_size() // 2), ("dp_replicate", "dp_shard"))
     diff = fsdp_resume_maxdiff(mesh, "checkpoints/l3_fsdp")
     rlog.info(f"FSDP2 resume-after-restore max abs diff = {diff}")
     distenv.shutdown()

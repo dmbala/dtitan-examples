@@ -1,6 +1,6 @@
 import torch
 
-from dtensor_workshop import distenv, rlog
+from dtensor_workshop import rlog
 from dtensor_workshop.model import build_block
 from dtensor_workshop.regional import regional_compile
 

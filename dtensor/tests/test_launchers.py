@@ -30,5 +30,5 @@ def test_2node_launcher_shape():
     assert "--account=kempner_dev" in text
     assert "--mem=" in text
     assert "TORCH_NCCL" not in text
-    assert "srun singularity exec --nv" in text
+    assert "srun --cpu-bind=none singularity exec --nv" in text
     assert '--rdzv_id="$SLURM_JOB_ID"' in text

@@ -15,6 +15,19 @@ def test_1node():
     assert "-m torchtitan.train" in t
     assert "--model.name llama3 --model.flavor debugmodel" in t
     assert "outputs:/outputs" in t
+    assert "TRITON_LIBCUDA_PATH" in t  # MoE grouped-GEMM Triton kernel needs libcuda.so
+
+
+def test_8gpu():
+    t = (SLURM / "launch_8gpu.sbatch").read_text()
+    assert "--account=kempner_dev" in t
+    assert "--partition=kempner_rtx" in t
+    assert "dtitan-torch211.sif" in t
+    assert "--gpus-per-node=8" in t
+    assert "--standalone --nproc_per_node=8" in t
+    assert "-m torchtitan.train" in t
+    assert "TRITON_LIBCUDA_PATH" in t  # MoE grouped-GEMM
+    assert "TORCH_FR_BUFFER_SIZE" in t  # Flight Recorder (Level 3)
 
 
 def test_2node():

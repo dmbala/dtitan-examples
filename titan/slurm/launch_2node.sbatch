@@ -27,6 +27,9 @@ IMAGE=/n/holylfs06/LABS/kempner_shared/Everyone/containers/applications/dtitan/d
 export SINGULARITYENV_HF_HOME="$(pwd)/outputs/hf_cache"
 export SINGULARITYENV_HF_DATASETS_CACHE="$(pwd)/outputs/hf_cache/datasets"
 mkdir -p "$(pwd)/outputs/hf_cache/datasets"
+# MoE grouped-GEMM (Level 3) uses a Triton kernel whose libcuda_dirs() needs libcuda.so;
+# point it at the --nv-injected driver dir (harmless for non-MoE runs).
+export SINGULARITYENV_TRITON_LIBCUDA_PATH=/.singularity.d/libs
 
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n1)
 export MASTER_ADDR MASTER_PORT=29500

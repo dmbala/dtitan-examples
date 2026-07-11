@@ -30,6 +30,15 @@ def test_8gpu():
     assert "TORCH_FR_BUFFER_SIZE" in t  # Flight Recorder (Level 3)
 
 
+def test_fakebackend():
+    t = (SLURM / "launch_fakebackend.sbatch").read_text()
+    assert "--partition=kempner_rtx" in t
+    assert "dtitan-torch211.sif" in t
+    assert "--nproc_per_node=1" in t
+    assert "--comm.mode=fake_backend" in t
+    assert "NGPU" in t
+
+
 def test_2node():
     t = (SLURM / "launch_2node.sbatch").read_text()
     assert "--account=kempner_dev" in t

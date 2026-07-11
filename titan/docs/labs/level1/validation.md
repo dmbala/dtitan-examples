@@ -62,8 +62,9 @@ singularity exec --nv "$IMAGE" bash -lc 'cd titan && NGPU=4 torchrun --standalon
   --model.name llama3 --model.flavor debugmodel \
   --model.hf_assets_path=assets/test_tokenizer \
   --training.dataset=c4_test --training.dataset_path=assets/c4_subset \
-  --comm.mode=fake_backend'
+  --comm.mode=fake_backend --training.steps=5'
 ```
+(Or simply run `labs/level1/03_fake_backend.sh`, which submits this via `slurm/launch_fakebackend.sbatch`.)
 
 **Expected Outcome:** The model builds, the log shows `Applied FSDP to the model`, a couple of training steps run, and the job ends with `Training completed` — all in one process.
 

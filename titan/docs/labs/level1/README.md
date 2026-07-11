@@ -69,9 +69,9 @@ NGPU=4 torchrun --standalone --nproc_per_node=1 -m torchtitan.train \
   --model.name llama3 --model.flavor debugmodel \
   --model.hf_assets_path=assets/test_tokenizer \
   --training.dataset=c4_test --training.dataset_path=assets/c4_subset \
-  --comm.mode=fake_backend
+  --comm.mode=fake_backend --training.steps=5
 ```
-(Run inside `singularity exec --nv <image>` or via the launcher's `torchrun` invocation. A bare `NGPU=4 python -m torchtitan.train … --comm.mode=fake_backend` — no `torchrun` — fails with `KeyError: 'LOCAL_RANK'`; torchtitan reads `LOCAL_RANK` for the device.)
+(Run inside `singularity exec --nv <image>`. A bare `NGPU=4 python -m torchtitan.train … --comm.mode=fake_backend` — no `torchrun` — fails with `KeyError: 'LOCAL_RANK'`; torchtitan reads `LOCAL_RANK` for the device.) The runnable script **`labs/level1/03_fake_backend.sh`** submits this for you via `slurm/launch_fakebackend.sbatch`, which sets `NGPU`, the `--nproc_per_node=1` torchrun form, and the HF cache. Keep `--training.steps` small — this is a dry-run, not a real training run.
 
 **Expected artifact:** Console log showing model build, `Applied FSDP to the model`, and a couple of training steps completing — all in **one process**, no real multi-GPU communication required.
 

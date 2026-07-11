@@ -57,14 +57,21 @@ def run_checks():
 
 
 def main():
+    results = run_checks()
     failed = 0
-    for name, ok, detail in run_checks():
+    train_import_failed = False
+    for name, ok, detail in results:
         status = "PASS" if ok else "FAIL"
         failed += 0 if ok else 1
+        if name == "torchtitan.train import" and not ok:
+            train_import_failed = True
         print(f"[{status}] {name}: {detail}")
+    if train_import_failed:
+        print("\n'torchtitan.train import' failed — this is the torch 2.10 gate. "
+              "Rebuild the container (torch>=2.11) per container/dtitan.def.")
     if failed:
-        print(f"\n{failed} check(s) failed. On torch 2.10 the 'torchtitan.train import' "
-              f"failure is expected — rebuild the container (torch>=2.11) per container/dtitan.def.")
+        print(f"\n{failed} check(s) failed. (A 'gpu visible' failure is expected on a "
+              f"login node — run preflight inside a GPU allocation.)")
     return 1 if failed else 0
 
 

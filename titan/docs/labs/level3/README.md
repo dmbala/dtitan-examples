@@ -196,7 +196,7 @@ sbatch slurm/launch_8gpu.sbatch \
   --training.steps=20
 ```
 
-**Honesty note:** every individual flag above is independently GPU-validated (Lab 1, Lab 3, Lab 4, and Level 2's `--checkpoint.enable/--checkpoint.interval/--checkpoint.no-last-save-model-only` resume pattern each ran cleanly on their own). The specific *combination* in each capstone option was not separately re-run end-to-end as one job at authoring time — treat the composed command as a well-formed extrapolation from validated pieces, not as a claim that this exact line has been observed to produce the numbers above. Recall from Level 2 that `checkpoint.last_save_model_only` defaults to `True`, so without `--checkpoint.no-last-save-model-only` the final checkpoint is model-only and will fail to resume with `RuntimeError: Missing key in checkpoint state_dict: dataloader.dp_rank_0`.
+**Validation note:** capstone Option A (HSDP+TP + FP8 + DCP) was run end-to-end on `kempner_rtx` and confirmed — the 3D mesh builds (`dp_replicate=2, dp_shard=2, tp=2`), `Float8 tensorwise scaled training active` appears, and full checkpoints land at `outputs/l3_capstone/checkpoint/step-10` and `step-20`. Option B (MoE + EP) composes the individually-validated Lab-3 MoE flags. Recall from Level 2 that `checkpoint.last_save_model_only` defaults to `True`, so without `--checkpoint.no-last-save-model-only` the final checkpoint is model-only and will fail to resume with `RuntimeError: Missing key in checkpoint state_dict: dataloader.dp_rank_0`.
 
 **Capstone deliverables:**
 1. Launch command (whichever option you chose, or your own combination)

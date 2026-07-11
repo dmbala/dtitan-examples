@@ -6,19 +6,22 @@ SLURM = pathlib.Path(__file__).resolve().parent.parent / "slurm"
 def test_1node():
     t = (SLURM / "launch_1node.sbatch").read_text()
     assert "--account=kempner_dev" in t
-    assert "--partition=kempner_h100" in t
+    # torch-2.11 image is CUDA 13.2 -> runs on kempner_rtx (Blackwell), not kempner_h100
+    assert "--partition=kempner_rtx" in t
+    assert "dtitan-torch211.sif" in t
     assert "--mem=" in t
     assert "--output=outputs/" in t
     assert "--standalone --nproc_per_node=4" in t
     assert "-m torchtitan.train" in t
-    assert "--module llama3 --config llama3_debugmodel" in t
+    assert "--model.name llama3 --model.flavor debugmodel" in t
     assert "outputs:/outputs" in t
 
 
 def test_2node():
     t = (SLURM / "launch_2node.sbatch").read_text()
     assert "--account=kempner_dev" in t
-    assert "--partition=kempner_h100" in t
+    assert "--partition=kempner_rtx" in t
+    assert "dtitan-torch211.sif" in t
     assert "--mem=" in t
     assert "--output=outputs/" in t
     assert "--nodes=2" in t

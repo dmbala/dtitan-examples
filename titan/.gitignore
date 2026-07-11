@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 outputs/*
 !**/.gitkeep
+# Generated C4 subset (real web text; produced by scripts/prepare_c4_subset.py, not vendored)
+assets/c4_subset/
